@@ -1,0 +1,537 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>three.js webgl - geometry - terrain</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            color: #000;
+            font-family: Monospace;
+            font-size: 13px;
+            margin: 0px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+
+
+    <div id="score" style="position:absolute;top:10px;left:600px">MOVE WITH (AWSD) ---- Score : 0</div>
+    
+    <script src="build/three.min.js"></script>
+
+    <script src="js/controls/OrbitControls.js"></script>
+    <script src="js/Mirror.js"></script>
+    <script src="js/WaterShader.js"></script>
+    <script src="Dolphin.js"></script>
+
+    <script src="js/Detector.js"></script>
+    <script src="js/loaders/MTLLoader.js"></script>
+    <script src="js/loaders/OBJMTLLoader.js"></script>
+    <script src="js/controls/TrackballControls.js"></script>
+
+
+
+    <script>
+
+            function randomIntFromInterval(min, max) {
+                return Math.floor(Math.random() * (max - min + 1) + min);
+            }
+            
+
+			if ( ! Detector.webgl ) {
+
+				Detector.addGetWebGLMessage();
+				document.getElementById( 'container' ).innerHTML = "";
+
+			}
+			var scoreDiv = document.getElementById("score");
+			var score = 0;
+			var container, stats;
+			var gameover = false;
+			var camera, scene, renderer;
+
+			var coins = new Array();
+			var coins_pattren = new Array();
+			var boxes = new Array();
+			
+
+			var parameters = {
+				width: 2000,
+				height: 2000,
+				widthSegments: 250,
+				heightSegments: 250,
+				depth: 1500,
+				param: 4,
+				filterparam: 1
+			}
+
+			var clock = new THREE.Clock();
+
+			var cameraControls;
+
+			var dolphin;
+			var n = 1;
+
+			var controls = {
+
+				moveForward: true,
+				moveBackward: false,
+				moveLeft: false,
+				moveRight: false,
+				jump: false
+
+			};
+
+			var waterNormals;
+
+			function addCoins() {
+			    for (var i = 0; i < coins_pattren.length; i++) {
+			        
+			        var coin = coins_pattren[i].clone();
+			        coin.position.z += n * 8 * 5000;
+			        coins.push(coin);
+			        scene.add(coin);
+			        if (i % 5 == 0) {
+			            var cube = new THREE.Mesh(geometry, material);
+			            cube.position.set(randomIntFromInterval(-3000, 3000), 250, coin.position.z);
+			            boxes.push(cube);
+			            scene.add(cube);
+			        }
+			    }
+			    n++;
+			}
+
+			init();
+
+			animate();
+
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				// moving skybox test :: Arsh // FAIL
+				// renderer.setFaceCulling( THREE.CullFaceNone );
+				// renderer.autoClear = false;
+				container.appendChild( renderer.domElement );
+
+				scene = new THREE.Scene();
+				// moving skybox test :: Arsh // FAIL
+				// skyboxScene = new THREE.Scene();
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.5, 3000000 );
+				// moving skybox test :: Arsh // FAIL
+				// skyboxCamera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.5, 3000000 );
+
+
+				cameraControls = new THREE.OrbitControls( camera, renderer.domElement );
+				cameraControls.target.set( 0, 50, -250 );
+				// camera limit :: Arsh // SUCCESS!!
+				cameraControls.maxPolarAngle = Math.PI / 2;
+				//cameraControls.minDistance = 500;
+				cameraControls.maxDistance = 9000;
+
+				camera.position.set( 0, 550, -1500 );
+
+
+				// EVENTS
+
+				window.addEventListener( 'resize', onWindowResize, false );
+				document.addEventListener( 'keydown', onKeyDown, false );
+				document.addEventListener( 'keyup', onKeyUp, false );
+
+
+
+				var light = new THREE.HemisphereLight( 0xffffbb, 0x080820, 1 );
+				light.position.set( - 1, 1, - 1 );
+				scene.add( light );
+
+
+				waterNormals = new THREE.ImageUtils.loadTexture( 'textures/waternormals.jpg' );
+				waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
+
+				water = new THREE.Water( renderer, camera, scene, {
+					textureWidth: 512,
+					textureHeight: 512,
+					waterNormals: waterNormals,
+					alpha: 	1.0,
+					sunDirection: light.position.clone().normalize(),
+					sunColor: 0xffffff,
+					waterColor: 0x001e0f,
+					distortionScale: 50.0,
+				} );
+
+
+				mirrorMesh = new THREE.Mesh(
+					new THREE.PlaneGeometry( parameters.width * 500, parameters.height * 500, 50, 50 ),
+					water.material
+				);
+
+
+				mirrorMesh.add( water );
+				mirrorMesh.rotation.x = - Math.PI * 0.5;
+				scene.add( mirrorMesh );
+
+				// load skybox
+
+				var cubeMap = new THREE.Texture( [] );
+				cubeMap.format = THREE.RGBFormat;
+				cubeMap.flipY = false;
+
+				var loader = new THREE.ImageLoader();
+				loader.load( 'textures/skyboxsun25degtest.png', function ( image ) {
+
+					var getSide = function ( x, y ) {
+
+						var size = 1024;
+
+						var canvas = document.createElement( 'canvas' );
+						canvas.width = size;
+						canvas.height = size;
+
+						var context = canvas.getContext( '2d' );
+						context.drawImage( image, - x * size, - y * size );
+
+						return canvas;
+
+					};
+
+					cubeMap.image[ 0 ] = getSide( 2, 1 );
+					cubeMap.image[ 1 ] = getSide( 0, 1 );
+					cubeMap.image[ 2 ] = getSide( 1, 0 );
+					cubeMap.image[ 3 ] = getSide( 1, 2 );
+					cubeMap.image[ 4 ] = getSide( 1, 1 );
+					cubeMap.image[ 5 ] = getSide( 3, 1 );
+					cubeMap.needsUpdate = true;
+
+				} );
+
+				// moving skybox test :: Arsh // WORKED!! KINDA
+				// var cubeShader = THREE.ShaderLib['skybox'];
+				var cubeShader = THREE.ShaderLib['cube'];
+
+				cubeShader.uniforms['tCube'].value = cubeMap;
+
+				var skyBoxMaterial = new THREE.ShaderMaterial( {
+					fragmentShader: cubeShader.fragmentShader,
+					vertexShader: cubeShader.vertexShader,
+					uniforms: cubeShader.uniforms,
+					depthWrite: false,
+					side: THREE.BackSide
+				});
+
+				var skyBox = new THREE.Mesh(
+					new THREE.BoxGeometry( 1000000, 1000000, 1000000 ),
+					skyBoxMaterial
+				);
+
+				// moving skybox test :: Arsh // WORKED!! KINDA
+				// skyBox.frustumCulled = false;
+
+				 scene.add( skyBox );
+				// moving skybox test :: Arsh // FAIL
+			    // skyboxScene.add( skyBox );
+
+
+				 //var geometry = new THREE.CubeGeometry(10, 10, 3000000);
+				 //var material = new THREE.MeshBasicMaterial({
+				 //    color: 0x650606
+				 //});
+				 //var cube = new THREE.Mesh(geometry, material);
+				 //cube.position.set(4300,5,0);
+
+				 //scene.add(cube);
+				 //var cube = new THREE.Mesh(geometry, material);
+				 //cube.position.set(-4300, 5, 0);
+
+				 //scene.add(cube);
+
+
+			    //var geometry = new THREE.CylinderGeometry(150, 150, 50, 100);
+				geometry = new THREE.TorusGeometry(100, 25, 10, 30, 2*Math.PI);
+
+				material = new THREE.MeshPhongMaterial({
+				    color: 0xffd700,
+				    shininess: 100,
+				    envMap: cubeMap
+				});
+
+				(function() {
+				    var z = 5000;
+				    var x = -2500;
+				    for (var i = 0; i < 10; i++) {
+				        var coin = new THREE.Mesh(geometry, material);
+				        coin.position.set(x, 200, z);
+				        coins_pattren.push(coin);
+				        z += 500;
+				    }
+				    z += 5000;
+				    for (var i = 0; i < 10; i++) {
+				        var coin = new THREE.Mesh(geometry, material);
+				        coin.position.set(x, 200, z);
+				        coins_pattren.push(coin);
+				        z += 500;
+				        x += 500;
+				    }
+				    z += 5000;
+				    x = 2500;
+				    for (var i = 0; i < 10; i++) {
+				        var coin = new THREE.Mesh(geometry, material);
+				        coin.position.set(x, 200, z);
+				        coins_pattren.push(coin);
+				        z += 500;
+				    }
+				    z += 5000;
+				    for (var i = 0; i < 10; i++) {
+				        var coin = new THREE.Mesh(geometry, material);
+				        coin.position.set(x, 200, z);
+				        coins_pattren.push(coin);
+				        z += 500;
+				        x -= 500;
+				    }
+				})();
+				geometry = new THREE.CubeGeometry(500, 500, 500);
+
+				material = new THREE.MeshPhongMaterial({
+				    map: THREE.ImageUtils.loadTexture('box.png'),
+				    shininess: 100,
+				    envMap: cubeMap
+				});
+
+				for (var i = 0; i < coins_pattren.length; i++) {
+				    var coin = coins_pattren[i];
+				    coins.push(coin);
+				    scene.add(coin);
+				    if (i % 5 == 0) {
+				        var cube = new THREE.Mesh(geometry, material);
+				        cube.position.set(randomIntFromInterval(-3000, 3000), 250, coin.position.z);
+				        boxes.push(cube);
+				        scene.add(cube);
+				    }
+				}
+
+				
+				//for (var i = 0; i < 10; i++) {
+				//    var cube = new THREE.Mesh(geometry, material);
+				//    cube.position.set(randomIntFromInterval(-3000, 3000), 250, randomIntFromInterval((n - 1) * 8 * 5000, n * 8 * 5000));
+				//    boxes.push(cube);
+				//    scene.add(cube);
+				//}
+				
+				
+
+			    // DOLPHIN
+
+				var loader = new THREE.OBJMTLLoader();
+
+
+				loader.load('5/5.obj', '5/5.mtl', function (object) {
+				    object.position.set(0, 20, 0);
+				    object.scale.set(100, 100, 100);
+				    //object.rotation.x =- Math.PI / 10;
+				    scene.add(object);
+				    
+				    var gyro = new THREE.Gyroscope();
+
+				    /*********ADDED SCALE***********/
+
+				    gyro.scale.set(0.01, 0.01, 0.01);
+
+
+				    gyro.add(camera);
+				    object.add(gyro);
+				    /*********NEW DOLPHIN OBJECT***********/
+				    dolphin = new Dolphin(object, controls, 3000);
+				    dolphin.walkSpeed = 700;
+				    
+
+				});
+
+			}
+
+
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				if (!gameover) render();
+
+			}
+
+			// EVENT HANDLERS
+
+			function onWindowResize( event ) {
+
+				SCREEN_WIDTH = window.innerWidth;
+				SCREEN_HEIGHT = window.innerHeight;
+
+				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
+
+				camera.aspect = SCREEN_WIDTH/ SCREEN_HEIGHT;
+				camera.updateProjectionMatrix();
+
+				// moving skybox test :: Arsh // FAIL
+				// skyBoxCamera.aspect = SCREEN_WIDTH/ SCREEN_HEIGHT;
+				// skyBoxCamera.updateProjectionMatrix();
+
+			}
+
+			function onKeyDown(event) {
+
+
+
+			    switch (event.keyCode) {
+
+				//case 38: /*up*/
+			    //    case 87: /*W*/ 	controls.moveForward = true;  break;
+
+				//case 40: /*down*/
+			    //    case 83: /*S*/ 	 controls.moveBackward = true; break;
+
+				//case 37: /*left*/
+				case 65: /*A*/   controls.moveLeft = true; break;
+
+				//case 39: /*right*/
+				case 68: /*D*/    controls.moveRight = true; break;
+
+				//case 67: /*C*/     controls.crouch = true; break;
+				case 32: /*space*/ controls.jump = true; break;
+				//case 17: /*ctrl*/  controls.attack = true; break;
+
+
+			    }
+
+		};
+
+		    function onKeyUp ( event ) {
+
+			    switch( event.keyCode ) {
+
+				    //case 38: /*up*/
+				    //case 87: /*W*/ controls.moveForward = false; break;
+
+				    //case 40: /*down*/
+				    //case 83: /*S*/ 	 controls.moveBackward = false; break;
+
+				    //case 37: /*left*/
+				    case 65: /*A*/ 	 controls.moveLeft = false; break;
+
+				    //case 39: /*right*/
+			        case 68: /*D*/ 	  controls.moveRight = false; break;
+
+				    //case 32: /*space*/ controls.jump = false; break;
+				    //case 17: /*ctrl*/  controls.attack = false; break;
+
+			    }
+
+		    };
+
+		    
+
+
+		    function render() {
+
+		        var time = performance.now() * 0.001;
+		        dolphin.walkSpeed += 0.5;
+		        
+			    var delta = clock.getDelta();
+			    dolphin.update(delta);
+			    cameraControls.update(delta);
+
+			    for (var i = 0; i < coins.length; i++) {
+			        if (dolphin.root.position.x >= coins[i].position.x - 200 &&
+                        dolphin.root.position.x <= coins[i].position.x + 200 &&
+                        dolphin.root.position.z >= coins[i].position.z - 200 &&
+                        dolphin.root.position.z <= coins[i].position.z + 200) {
+                        
+			            score++;
+			            scoreDiv.innerHTML= "MOVE WITH (AWSD) ---- Score : "+score;
+			            scene.remove(coins[i]);
+			            coins.splice(i, 1);
+			            continue;
+			        }
+
+			        if (coins[i].position.z < dolphin.root.position.z-5000) {
+			            scene.remove(coins[i]);
+			            coins.splice(i, 1);
+			        }
+                    else
+			            coins[i].rotation.y = time * 4;
+			    }
+
+			    for (var i = 0; i < boxes.length; i++) {
+			        if (dolphin.root.position.x >= boxes[i].position.x - 250 &&
+                        dolphin.root.position.x <= boxes[i].position.x + 250 &&
+                        dolphin.root.position.z >= boxes[i].position.z - 250 &&
+                        dolphin.root.position.z <= boxes[i].position.z + 250) {
+
+
+			            gameover = true;
+			            dolphin.walkSpeed = 0;
+			            alert("game over");
+			            restart();
+			            break;
+			        }
+
+			        if (boxes[i].position.z < dolphin.root.position.z - 5000) {
+			            scene.remove(boxes[i]);
+			            boxes.splice(i, 1);
+			        }
+			        else{
+			            boxes[i].position.y = Math.sin(5 * time) * 50 + 200;
+			        }
+			    }
+
+			    if (dolphin.root.position.z >= ((n - 1) * 8 * 5000 + 2 * 5000)) {
+			        addCoins();
+			    }
+
+                //dolphin.root.position.y = Math.sin(5*time) * 50 + 40;
+
+			    water.material.uniforms.time.value += 1.0 / 60.0;
+			    water.render();
+			    renderer.render( scene, camera );
+
+		    }
+
+		    function restart() {
+
+		        dolphin.root.position.set(0, 0, 0);
+		        for (var i = 0; i < boxes.length; i++) {
+		            scene.remove(boxes[i]);
+		            boxes.splice(i, 1);
+		        }
+		        for (var i = 0; i < coins.length; i++) {
+		            scene.remove(coins[i]);
+		            coins.splice(i, 1);
+		        }
+		        dolphin.walkSpeed = 700;
+		        dolphin.bodyOrientation = 0;
+		        n = 1;
+		        gameover = false;
+		        score = 0;
+		        scoreDiv.innerHTML = "MOVE WITH (AWSD) ---- Score : 0";
+		        for (var i = 0; i < 10; i++) {
+		            var cube = new THREE.Mesh(geometry, material);
+		            cube.position.set(randomIntFromInterval(-3000, 3000), 250, randomIntFromInterval((n - 1) * 8 * 5000, n * 8 * 5000));
+		            boxes.push(cube);
+		            scene.add(cube);
+		        }
+		        for (var i = 0; i < coins_pattren.length; i++) {
+		            coins.push(coins_pattren[i]);
+		            scene.add(coins_pattren[i]);
+		        }
+		        
+
+
+
+		    }
+
+    </script>
+</body>
+</html>
